@@ -41,6 +41,9 @@ services:
       - shared-services-network
     env_file:
       - .env
+    volumes:
+      - ../openmemory/api:/usr/src/openmemory
+      - ../mem0:/usr/src/openmemory/mem0
     environment:
       USER: ${MEM0_USER_ID}
       DATABASE_URL: ${DATABASE_URL}
@@ -67,7 +70,7 @@ services:
     ports:
       - ${MEM0_API_HOST_IP}:${MEM0_API_HOST_PORT}:8765
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8765/docs || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/docs', timeout=3)\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -94,7 +97,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       NEXT_PUBLIC_USER_ID: ${MEM0_USER_ID}
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:3000', timeout=3)\" || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
