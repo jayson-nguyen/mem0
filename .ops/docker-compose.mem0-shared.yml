@@ -1,0 +1,113 @@
+name: mem0-shared
+
+services:
+  shared-services-ready:
+    image: docker.io/busybox:1.36
+    restart: unless-stopped
+    networks:
+      - shared-services-network
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - >
+        until nc -z ${SHARED_POSTGRES_HOST} ${SHARED_POSTGRES_PORT}; do
+          echo "Waiting for Postgres at ${SHARED_POSTGRES_HOST}:${SHARED_POSTGRES_PORT}";
+          sleep 2;
+        done;
+        until nc -z ${SHARED_QDRANT_HOST} ${SHARED_QDRANT_PORT}; do
+          echo "Waiting for Qdrant at ${SHARED_QDRANT_HOST}:${SHARED_QDRANT_PORT}";
+          sleep 2;
+        done;
+        tail -f /dev/null
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "nc -z ${SHARED_POSTGRES_HOST} ${SHARED_POSTGRES_PORT} && nc -z ${SHARED_QDRANT_HOST} ${SHARED_QDRANT_PORT}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+
+  mem0-api:
+    image: mem0/openmemory-mcp:latest
+    restart: unless-stopped
+    depends_on:
+      shared-services-ready:
+        condition: service_healthy
+    networks:
+      - default
+      - shared-services-network
+    env_file:
+      - .env
+    environment:
+      USER: ${MEM0_USER_ID}
+      DATABASE_URL: ${DATABASE_URL}
+      QDRANT_HOST: ${QDRANT_HOST}
+      QDRANT_PORT: ${QDRANT_PORT}
+
+      # OpenAI-compatible NVIDIA DIM wiring
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      NVIDIA_BASE_URL: ${NVIDIA_BASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+
+      EMBEDDER_PROVIDER: ${EMBEDDER_PROVIDER}
+      EMBEDDER_MODEL: ${EMBEDDER_MODEL}
+      EMBEDDER_API_KEY: ${EMBEDDER_API_KEY}
+      EMBEDDER_BASE_URL: ${EMBEDDER_BASE_URL}
+
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - ${MEM0_API_HOST_IP}:${MEM0_API_HOST_PORT}:8765
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8765/docs || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    cpus: ${MEM0_API_CPUS}
+    mem_limit: ${MEM0_API_MEM_LIMIT}
+
+  mem0-ui:
+    image: mem0/openmemory-ui:latest
+    restart: unless-stopped
+    depends_on:
+      mem0-api:
+        condition: service_healthy
+    networks:
+      - default
+    ports:
+      - ${MEM0_UI_HOST_IP}:${MEM0_UI_HOST_PORT}:3000
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_USER_ID: ${MEM0_USER_ID}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:3000', timeout=3)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    cpus: ${MEM0_UI_CPUS}
+    mem_limit: ${MEM0_UI_MEM_LIMIT}
+
+networks:
+  shared-services-network:
+    external: true
+    name: ${SHARED_DOCKER_NETWORK}
